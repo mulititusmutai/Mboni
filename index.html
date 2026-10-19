@@ -327,7 +327,7 @@ const near=(r,g,b)=>{const l=lab(r,g,b);let best=PAL29[0],bd=1e9;for(const p of 
 const hx=h=>{const n=parseInt(h.slice(1),16);return[n>>16,n>>8&255,n&255]};
 const pick=(a,id)=>(a.find(x=>x[0]===id)||a[0])[2];
 const BD={'5':[4.55,3.19],'6':[4,2.8],'8':[3,2.1],'10':[2.3,1.61],'11':[2.1,1.47],'12':[1.9,1.33],'13':[1.7,1.19],'15':[1.45,1.02]};
-const LV={bracelet:{c:[90,120,150],r:[30,45,60]},earring:{c:[20,30,45],r:[10,20,30]},keychain:{c:[30,60,90],r:[20,40,60]}};   /* MODE_LEVELS: columns = length, rows = width */
+const LV={bracelet:{c:[120,150,180],r:[15,30,50]},earring:{c:[20,30,45],r:[10,20,30]},keychain:{c:[30,60,90],r:[20,40,60]}};   /* MODE_LEVELS: columns = length, rows = width */
 const IDX={S:0,M:1,L:2};
 const LEN_NAME={S:'Short',M:'Medium',L:'Long'},WID_NAME={S:'Slender',M:'Regular',L:'Thick'};   /* the same words the Length and Width options use */
 const sizeText=()=>{const LT=LV[S.item],e=S.item==='earring',mm=n=>' ('+n+'\u00a0mm)';return (e?'Earring pair':label('item',S.item))+', '+LEN_NAME[S.len]+mm(LT.c[IDX[S.len]])+(S.form==='rect'?' × '+WID_NAME[S.wid]+mm(LT.r[IDX[S.wid]]):'')+(e?' each':'')};
