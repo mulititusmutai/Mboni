@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mboni</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ===== TOKENS: the only place values are defined ===== */
+:root{
+  --bg:#F0F1F2; --surface:#FFFFFF; --stage:#E4E6E8; --line:#E3E4E6; --chip:#E6E7E9;
+  --text:#14131A; --text-2:#6B6970; --pink:#FF2E93; --pink-deep:#C4096A;
+  --font:'Geist',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --t14:14px; --t16:16px; --t20:20px; --t28:28px; --t44:44px;
+  --s1:4px; --s15:6px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px;
+  --r1:6px; --r2:10px; --r3:14px; --r4:999px;
+  --shadow:0 2px 12px rgba(20,19,26,.07); --ease:cubic-bezier(.2,.7,.2,1);
+  /* context: every primitive reads these, surfaces override them */
+  --sf:var(--bg); --on:var(--text); --mut:var(--text-2); --inv:var(--bg);
+  color-scheme:light;
+}
+:root[data-theme="dark"]{
+  --bg:#101014; --surface:#1B1B20; --stage:#23232A; --line:#2E2E36; --chip:#2B2B33;
+  --text:#F2F1F4; --text-2:#9D9AA3; --shadow:0 2px 12px rgba(0,0,0,.4); color-scheme:dark}
+
+*,*::before,*::after{box-sizing:border-box}
+html,body{height:100%;margin:0;overflow:hidden}
+body{background:var(--bg);color:var(--on);font:400 var(--t16)/1.4 var(--font);-webkit-font-smoothing:antialiased}
+:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+button{font:inherit;color:inherit;cursor:pointer;background:none;border:0;padding:0}
+:focus-visible{outline:2px solid var(--pink);outline-offset:2px}
+svg{display:block}
+[data-mut]{color:var(--mut)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+/* ===== PRIMITIVE 1: flow (all layout: rows, columns, grids, scroll) ===== */
+/* contract: every box clips its own content, never shrinks, never lets content set its width */
+[data-ui]{min-width:0;overflow:clip;flex-shrink:0}
+[data-ui=flow]{display:flex;flex-direction:column;min-height:0}
+[data-wrap]{flex-wrap:wrap}
+[data-grid]{display:grid;align-content:start;justify-content:start}
+[data-scroll]{scrollbar-width:none}
+[data-scroll=x]{overflow:auto hidden} [data-scroll=y]{overflow:hidden auto}
+[data-grow]{flex:1 1 0;min-height:0}
+[data-span]{grid-column:1/-1}
+[data-frame]{height:100%;padding:0 var(--s5) var(--s5)} /* one gutter token on the left, right and bottom */
+[data-rule]{border-left:1px solid var(--mut);padding-left:var(--s5)}
+
+/* ===== PRIMITIVE 2: surface (cards, stage, overlays) ===== */
+[data-ui=surface]{position:relative;display:flex;flex-direction:column;gap:var(--s5);background:var(--sf);color:var(--on);border-radius:var(--r3);padding:var(--s5)}
+[data-tone=light]{--sf:var(--surface);border:1px solid var(--line)}
+[data-tone=stage]{container-type:size;gap:var(--s3);--sf:var(--stage);display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) max-content}
+[data-tone=media]{--sf:rgba(20,19,26,.66);--on:#fff;--mut:rgba(255,255,255,.7);--inv:#14131A;border-radius:var(--r2);padding:var(--s3);gap:var(--s2);font-size:var(--t14);backdrop-filter:blur(10px)}
+[data-pin=bl]{justify-self:start;align-self:end;max-width:100%;max-height:max(56cqh,168px)}   /* never wider than the stage, never taller than a share of it: the picture always keeps its room */
+/* ===== overlay discipline: the panels scroll, the toolbar stays, every row wraps, nothing is wider than the overlay ===== */
+[data-shrink]{flex-shrink:1000;min-height:0}   /* the panels give up space first... */
+[data-shrink=soft]{flex-shrink:1}   /* ...the pinned toolbar only after the panels have nothing left to give, and then it scrolls rather than being cut off */
+[data-scroll]:empty{display:none}
+[data-tone=media] [data-ui]{max-width:100%}
+[data-tone=media] [data-wrap]{row-gap:var(--s2)}
+[data-tone=media] [data-scroll]{scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.35) transparent}
+[data-tone=media] [data-more]{-webkit-mask-image:linear-gradient(to bottom,#000 calc(100% - 28px),transparent);mask-image:linear-gradient(to bottom,#000 calc(100% - 28px),transparent)}   /* more below: the last line fades instead of being cut */
+[data-tone=media] [data-ui=control]{height:36px;padding:0 var(--s15);font-size:var(--t14)}
+[data-tone=media] [data-text]{padding:var(--s2) var(--s3)}
+@media (max-width:900px){[data-tone=stage]{padding:var(--s3)}}
+
+/* ===== PRIMITIVE 3: control (every button, link, field, header) ===== */
+[data-ui=control]{display:inline-flex;align-items:center;gap:var(--s2);height:40px;padding:0 var(--s3);border-radius:var(--r1);font-size:var(--t16);font-weight:400;color:var(--on)}
+[data-v=solid],[data-v=soft]{height:56px;padding:0 var(--s5);border-radius:var(--r2);font-weight:500;justify-content:center}
+[data-v=solid]{background:var(--pink-deep);color:#fff}
+[data-v=soft]{background:var(--chip)}
+[data-v=icon]{width:36px;height:36px;padding:0;justify-content:center;border-radius:var(--r4);background:var(--surface);border:1px solid var(--line)}
+[data-v=field]{width:100%;height:64px;padding:0 var(--s4);border:1px solid var(--line);border-radius:var(--r2);color:var(--mut)}
+[data-v=head]{width:100%;height:auto;padding:0;justify-content:space-between;font-size:var(--t20);font-weight:500;border-radius:0}
+[data-ui=control][aria-pressed=true]{background:var(--on);color:var(--inv)}
+[data-block]{width:100%}
+
+/* ===== PRIMITIVE 4: choice (every selectable item: swatch, thumb, card, chip) ===== */
+[data-media]{container-type:inline-size}
+[data-ui=choice]{position:relative;display:flex;flex-direction:column;gap:var(--s2);text-align:left;padding:0;border:1px solid color-mix(in srgb,var(--on) 14%,transparent);border-radius:var(--r1);color:var(--on)}
+[data-text]{padding:var(--s3);border-radius:var(--r2)}
+[data-ind]{padding-bottom:calc(var(--s3) + 44px)}
+[data-ui=choice][aria-pressed=true]::after{content:"";position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 0 0 2px var(--sf),inset 0 0 0 4px var(--on);pointer-events:none}
+[data-ui=choice]>b{overflow-wrap:anywhere}
+[data-ui=choice]>[data-ui=icon]{position:absolute;top:var(--s2);left:var(--s2);z-index:1}
+[data-ui=choice]>b{font-weight:400}
+[data-ui=radio]{position:absolute;right:var(--s3);bottom:var(--s3);width:32px;height:32px;border-radius:var(--r4);background:var(--chip)}
+[aria-pressed=true]>[data-ui=radio]{background:#fff;border:9px solid var(--on)}
+
+/* ===== PRIMITIVE 5: media (every picture: bead grid or solid color) ===== */
+
+[data-ui=media]{position:relative;width:100%;aspect-ratio:var(--rw,1)/var(--rh,1);height:calc(100cqw*var(--rh,1)/var(--rw,1));border-radius:var(--r1);background:var(--c,var(--stage))}
+[data-ui=media] svg{position:absolute;inset:10%;width:80%;height:80%}
+[data-size=fill]{height:100%;aspect-ratio:auto;background:none}
+[data-size=fill] svg{inset:0;width:100%;height:100%}
+
+/* ===== PRIMITIVE 6: readout (every label + value pair) ===== */
+[data-ui=readout]{display:flex;flex-direction:column;line-height:1.25}
+[data-ui=readout][data-flip]{flex-direction:column-reverse}
+[data-ui=readout]>.k{color:var(--mut)}
+[data-size=md]>.v{font-size:var(--t20);font-weight:500} [data-size=md]>.k{font-size:var(--t14)}
+[data-size=big]>.v{font-size:var(--t28)}
+[data-size=tag]{flex-direction:row;align-self:center;background:var(--chip);border-radius:var(--r4);padding:2px var(--s3);font-size:var(--t14)}
+
+/* ===== PRIMITIVE 7: text and heads (titles, links, group headers, icons) ===== */
+[data-ui=text][data-v=title]{font-size:var(--t44);letter-spacing:-.02em;line-height:1.1}
+[data-ui=text][data-v=link]{color:var(--on);text-decoration:underline}
+[data-ui=head]{display:flex;align-items:center;gap:var(--s2);font-weight:500}
+[data-ui=head][data-mut]{font-weight:400;font-size:var(--t14)}
+[data-chev]{transition:transform 240ms var(--ease)}
+[data-open] [data-chev]{transform:rotate(180deg)}
+[data-ui=icon][data-i]{width:18px;height:18px;border:1.5px solid currentColor;border-radius:50%;display:inline-grid;place-items:center;font:500 11px/1 var(--font);color:var(--mut)}
+
+@media (max-width:900px){
+  [data-collapse]{grid-template-columns:minmax(0,1fr)!important;grid-template-rows:68px minmax(300px,56vh) minmax(0,1fr)!important}
+  [data-frame]{padding:0 var(--s3) var(--s3)}
+  [data-ui=control][data-v=solid],[data-ui=control][data-v=soft]{height:44px;padding:0 var(--s4)}
+}
+input[data-ui=control]{font:inherit;color:var(--on);background:none}
+[data-bar]{height:72px;border:1px solid var(--line);border-radius:var(--r1)}
+[data-bar]>i{display:block;min-height:0}
+input[data-ui=control]::placeholder{color:var(--mut)}
+</style>
+</head>
+<body>
+<div id="app" style="height:100%"></div>
+<script>
+/* ===== THE CORE: one state, one spec, one renderer ===== */
+const cl=v=>JSON.parse(JSON.stringify(v));
+/* ===== SCHEMA: every state key is declared once, as SHARED (one value for the whole order) or DESIGN (each earring has its own copy).
+   DF, the list snap() and load() move between earrings, is derived from DESIGN, so a new key cannot be forgotten. This is also the Save/Load format ===== */
+const SHARED={shape:'flat',form:'rect',item:'keychain',len:'M',wid:'M',bead:'10',ear:'0',pm:'same',mm:'orbit',emo:0,ecat:'smile',view:'v1',bg:'light',light:'studio',scene:(typeof matchMedia==='function'&&matchMedia('(max-width:900px)').matches)?0:1,real:0,three:0,open:{form:1,size:1,bead:1}};
+const DESIGN={source:'text',stripes:[{c:'pink',w:1}],sel:'0',txt:'MBONI',font:'sans',textc:'bone',textbg:'ink',sat:'1',scale:1,rot:0,fh:false,fv:false,tx:0,ty:0,imgName:'',imgErr:'',imgId:0,dn:3,dsel:'0',dcol:[],dtxt:'JC',ground:'ink',outline:'none',outlinec:'bone',finish:'glossy',procBy:{image:'blended',solid:'dominant',text:'dominant'},chk:['pink','bone'],csel:'0'};
+const S=cl({...SHARED,...DESIGN});
+
+const PAL=['#FF2E93','#F4E9DA','#24242C','#4CC3A5','#F2B33D','#5B7CFA','#D9DCE0'];
+const price=p=>typeof p==='string'?p:'Standard';
+const PATH={up:'M12 19V5M6 11l6-6 6 6',down:'M12 5v14M6 13l6 6 6-6',left:'M19 12H5M11 6l-6 6 6 6',right:'M5 12h14M13 6l6 6-6 6',center:'M12 3v4M12 17v4M3 12h4M17 12h4M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6',minus:'M5 12h14',plus:'M12 5v14M5 12h14',chev:'M6 9l6 6 6-6',back:'M20 12H4M10 6l-6 6 6 6',save:'M6 3h12v18l-6-4.5L6 21z',load:'M4 12a8 8 0 1 0 3-6.2M4 4v4h4',
+  search:'M15 15l5 5M16 10a6 6 0 1 1-12 0 6 6 0 0 1 12 0',expand:'M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7',next:'M9 5l7 7-7 7'};
+const ic=k=>k==='info'?'<span data-ui="icon" data-i>i</span>'
+  :`<svg ${k==='chev'?'data-chev ':''}width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="${PATH[k]}"/></svg>`;
+const T=t=>typeof t==='number'?`repeat(${t},minmax(0,1fr))`:t.map(x=>x==='f'?'minmax(0,1fr)':x==='h'?'minmax(0,max-content)':x+'px').join(' ');
+const RT=r=>{const q=String(r||1).split('/');return `--rw:${q[0]};--rh:${q[1]||1}`};
+const GAP={tight:'s2',in:'s3',between:'s5'};
+const V=x=>typeof x==='function'?x(S):x;
+
+/* node builders */
+const F=(p,c)=>({t:'flow',...p,c:c.filter(Boolean)}), G=(title,info,c)=>({t:'group',title,info,c}),
+  B=(v,label,p={})=>({t:'control',v,label,...p}), RO=(k,v,p={})=>({t:'readout',k,v,...p}),
+  SF=(tone,p,c)=>({t:'surface',tone,...p,c}), CH=(key,slots,items,p={})=>({t:'choices',key,slots,items,...p});
+const mk=(arr,price,kind)=>arr.map(([id,label,x,pr])=>({id,label,price:pr!==undefined?pr:price,m:kind==='c'?{c:x}:{b:x}}));
+
+/* ===== EARRING PAIR: each earring is its own design. S always holds the one being worked on; the other waits in D ===== */
+const DF=Object.keys(DESIGN);
+const D=[null,null];
+const snap=()=>{const d={img:IMG};DF.forEach(k=>{d[k]=cl(S[k])});return d};
+const load=d=>{DF.forEach(k=>{S[k]=cl(d[k])});IMG=d.img};
+const withDesign=(d,fn)=>{const keep=snap();load(d);try{return fn()}finally{load(keep)}};
+const other=()=>D[1-(+S.ear)]||snap();   /* until the second earring is edited on its own it simply matches the first */
+function swapEar(id){if(S.pm!=='sep'||id===S.ear)return;const cur=snap(),next=D[+id]||cur;D[+S.ear]=cur;load(next);D[+id]=null;S.ear=id}
+function clampAll(){if(S.form!=='diamond')return;clampD();const o=1-(+S.ear);if(S.item==='earring'&&D[o])withDesign(D[o],()=>{clampD();D[o]=snap()})}
+const eng=()=>S.form==='rect'?bead2d():diamond2d();
+const cc2=r=>r.colors||r.cells;
+function pairOf(rs,act,sep,fins){   /* two earrings side by side, each turned 90deg clockwise so its length hangs vertically, in 2D and as one bead list for 3D; in Separate mode the active one is outlined */
+  const w=i=>rs[i].box.y1-rs[i].box.y0,h=i=>rs[i].box.x1-rs[i].box.x0,   /* turned: the lattice's height is now its width, and its width its height */
+    gap=Math.max(8,rs[0].d*4),W=w(0)+gap+w(1),H=Math.max(h(0),h(1)),cx=[-W/2+w(0)/2,W/2-w(1)/2];
+  let svg='',bl=[];const parts=[];
+  [0,1].forEach(i=>{const r=rs[i],bx=(r.box.x0+r.box.x1)/2,by=(r.box.y0+r.box.y1)/2;
+    svg+='<g data-ear="'+i+'"'+(sep?' style="cursor:pointer"':'')+' transform="translate('+cx[i].toFixed(3)+' 0) rotate(90) translate('+(-bx).toFixed(3)+' '+(-by).toFixed(3)+')">'+r.s+'</g>';
+    r.bl.forEach(b=>bl.push({x:-b.y+cx[i],y:b.x,a:b.a+Math.PI/2,c:b.c,f:fins[i]}));parts.push({colors:cc2(r),fin:fins[i]})});   /* (x,y) -> (-y,x) is the same quarter turn the SVG group makes */
+  if(sep)svg+='<rect data-hl x="'+(cx[act]-w(act)/2-1.5).toFixed(2)+'" y="'+(-h(act)/2-1.5).toFixed(2)+'" width="'+(w(act)+3).toFixed(2)+'" height="'+(h(act)+3).toFixed(2)+'" rx="1.5" fill="none" stroke="#FF2E93" stroke-width=".5" pointer-events="none"/>';
+  return{vb:(-W/2-5)+' '+(-H/2-5)+' '+(W+10)+' '+(H+10),s:svg,d:rs[0].d,p:rs[0].p,bl,parts}}
+const SCN={k:'',v:null};   /* the scene object keeps its identity until something it shows changes, so the 3D only rebuilds when it must */
+function scene2d(){
+  const fin=S.finish;let k,v;
+  if(S.item!=='earring'){const r=S.form==='rect'&&S.source==='image'&&!IMG?null:eng();if(!r)return null;
+    k=r.id+'|'+fin;if(SCN.k===k)return SCN.v;v={vb:r.vb,s:r.s,d:r.d,p:r.p,bl:r.bl,parts:[{colors:cc2(r),fin}]}}
+  else{const a=+S.ear,sep=S.pm==='sep',oth=other(),rs=[null,null],fins=[];rs[a]=eng();rs[1-a]=withDesign(oth,eng);fins[a]=fin;fins[1-a]=oth.finish;
+    k=[rs[0].id,rs[1].id,sep?a:-1,fins.join()].join('|');if(SCN.k===k)return SCN.v;v=pairOf(rs,a,sep,fins)}
+  SCN.k=k;return SCN.v=v}
+
+/* ===== PRICING (KES): the numbers to edit. Everything shown on screen follows from this block ===== */
+const PRICE={bead:.5,step:50,min:50};   /* sale price per bead (cost is about 0.35); the total is rounded UP to the next `step`, never below `min` */
+const FINM={matte:1,glossy:1.1,glass:1.25,metal:1.5};   /* finish multipliers: PLACEHOLDERS until you set the real ones */
+const COLM={};   /* color multipliers by palette hex, e.g. '#c9942f':1.2; any color not listed counts as 1 */
+const kes=(v,d=2)=>'KES '+v.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
+const PRICING={PRICE,FINM,COLM};
+function priceOf(parts,fallbackBeads,finish,cfg=PRICING){   /* pure: a design's bead lists in, numbers out; nothing here reads the page. This is the part a server re-runs */
+  const{PRICE:P,FINM:F_,COLM:C}=cfg;let n=0,base=0,colorAdj=0,finAdj=0,raw=0;
+  if(parts)parts.forEach(pt=>{const b=pt.colors.length*P.bead,c=pt.colors.reduce((a,x)=>a+P.bead*(C[x]||1),0),f=F_[pt.fin]||1;n+=pt.colors.length;base+=b;colorAdj+=c-b;finAdj+=c*(f-1);raw+=c*f});
+  else{n=fallbackBeads;base=n*P.bead;raw=base*(F_[finish]||1);finAdj=raw-base}
+  const total=Math.max(P.min,Math.ceil(raw/P.step-1e-9)*P.step);   /* the 1e-9 stops float noise (350.00000000000006) bumping an exact multiple up a step */
+  return{n,base,fin:F_[finish]||1,colorAdj,finAdj,round:total-raw,total}}
+function beadCounts(parts){const o={};parts.forEach(pt=>pt.colors.forEach(h=>{const k=BEAD_NAME[h]||h;o[k]=(o[k]||0)+1}));return o}   /* "Apple Red": 312, for the kit order. Not shown anywhere yet */
+function quote(){const sc=scene2d();return priceOf(sc?sc.parts:null,sc?0:(S.form==='rect'?lay().cols*lay().rows:dc(S.dn).beads),S.finish)}
+
+/* data: the only place content lives */
+const cards=(key,ids,slots='mlpi')=>CH(key,slots,mk(ids,undefined,'b'),{cols:2,ind:1,ratio:'4/3'});
+const tiles=(key,ids,cols,ratio)=>CH(key,'ml',mk(ids,undefined,'b'),{cols,ratio});
+const swatches=(key,a)=>CH(key,'m',mk(a,0,'c'),{cols:5,ratio:1});
+const opts=(key,a,cols)=>CH(key,'l',a.map(([id,label])=>({id,label})),{cols});
+
+const OPQ=[['pink','Pink','#FF2E93'],['bone','Bone','#F4E9DA'],['ink','Ink','#24242C'],['red','Red','#E9462E'],['amber','Amber','#F2B33D'],['green','Green','#2F6B4F'],['blue','Blue','#5B7CFA'],['brown','Brown','#8A5A3C'],['gray','Gray','#9AA0A6'],['white','White','#FFFFFF']];
+const GRD=[['ink','Ink','#24242C'],['navy','Navy','#1F2A44'],['forest','Forest','#1F3A2E'],['wine','Wine','#4A1F2E'],['bone','Bone','#F4E9DA'],['white','White','#FFFFFF'],['sand','Sand','#E8D3B0'],['blush','Blush','#F7C6DD'],['sky','Sky','#BFE7F3'],['stone','Stone','#9AA0A6']];
+const BEADS=[['5','5/0',[4,3]],['6','6/0',[5,3]],['8','8/0',[6,4]],['10','10/0',[8,5]],['11','11/0',[9,5]],['12','12/0',[10,6]],['13','13/0',[11,7]],['15','15/0',[12,8]]];
+const VIEWS=mk([['v1','Front',[42,8]],['v2','Close-up',[14,3]],['v3','Flat',[36,6]],['v4','Worn',[42,8]],['v5','Side',[30,6]],['v6','Top',[26,5]]],undefined,'b');
+const step=(n,t)=>n+'. '+t;
+const EMO={smile:'😀😁😂😅😉😊😍😎🤔😭😡🥳'.match(/\p{Extended_Pictographic}/gu),hearts:['❤️','🧡','💛','💚','💙','💜','🖤','🤍','💕','💖','💔','💘'],
+  animal:'🐶🐱🦊🐻🐼🦁🐸🐵🦋🐢🦄🐝'.match(/\p{Extended_Pictographic}/gu),nature:['🌸','🌻','🌵','🌲','🍀','🌈','⭐','🌙','☀️','⚡','🔥','❄️'],
+  object:'🎉🎈🎵💎🔑📌💡🎯🏆🚀⚓🎨'.match(/\p{Extended_Pictographic}/gu),
+  flag:['🇰🇪','🇺🇸','🇬🇧','🇩🇪','🇫🇷','🇮🇹','🇪🇸','🇯🇵','🇨🇳','🇮🇳','🇧🇷','🇲🇽','🇨🇦','🇦🇺','🇳🇬','🇿🇦','🇪🇬','🇬🇭','🇪🇹','🇹🇿','🇷🇺','🇵🇹','🇳🇱','🇸🇪','🇳🇴','🇩🇰','🇫🇮','🇵🇱','🇺🇦','🇦🇷','🇨🇴','🇨🇱','🇵🇪','🇻🇪','🇮🇩','🇵🇭','🇹🇭','🇻🇳','🇰🇷','🇸🇦']};
+
+/* the whole interface as data */
+const build=()=>{
+  const rect=S.form==='rect',LT=LV[S.item];const pair=S.item==='earring',bs=scene2d(),sep=pair&&S.pm==='sep',ds=sep?(+S.ear?[other(),snap()]:[snap(),other()]):null;
+  const nm=(a,id)=>(a.find(x=>x[0]===id)||[])[1],per=(lab,f)=>RO(sep?lab+' (1 / 2)':lab,s=>sep?ds.map(f).join(' / '):f(snap()));GRID=bs;const u3=S.three&&!why3(),q=quote();
+  const SRC=[['solid',rect?'Solid & stripes':'Fill',[8,4],0],['text','Text',[12,3],0],['check','Checkerboard',[8,8],0]].concat(rect?[['image','Image',[10,6],0]]:[]);
+  const st=S.stripes,hexOf=c=>pick(OPQ,c);
+  const solid=[{t:'bar',seg:st.map(x=>[x.w,hexOf(x.c)])},
+    G('Stripes',0,[CH('sel','ml',st.map((x,i)=>({id:String(i),label:(i+1)+' (×'+x.w+')',m:{c:hexOf(x.c)}})),{cols:4,ratio:1})]),
+    F({dir:'row',g:'in'},[B('soft','Add stripe',{act:'addst'}),st.length>1&&B('soft','Remove stripe',{act:'delst'})]),
+    G('Color',0,[swatches('scol',OPQ)]),
+    G('Thickness',0,[opts('swt',[['1','1×'],['2','2×'],['3','3×'],['4','4×'],['6','6×'],['8','8×']],6)])];
+  const ck=S.source==='check'?eng().chk:null;
+  const check=[G('Colors in the checkerboard',0,[CH('csel','ml',S.chk.map((x,i)=>({id:String(i),label:String(i+1),m:{c:hexOf(x)}})),{cols:6,ratio:1})]),
+    F({dir:'row',g:'in'},[S.chk.length<6&&B('soft','Add color',{act:'addck'}),S.chk.length>2&&B('soft','Remove color',{act:'delck'})]),
+    G('Color',0,[swatches('ccol',OPQ)]),
+    ck&&RO('Squares',ck.cw+' × '+ck.ch+' beads'),ck&&RO(rect?'Beads per color':'Beads per color, each diamond',ck.counts.join(' / '))];
+  const emo=[B('soft','Add emoji',{block:1,act:'emo',pressed:S.emo}),
+    ...(S.emo?[G('Emoji category',0,[opts('ecat',[['smile','Smileys'],['hearts','Hearts'],['animal','Animals'],['nature','Nature'],['object','Objects'],['flag','Flags']],3)]),
+      G('Emoji',0,[opts('emoji',EMO[S.ecat].map(e=>[e,e]),6)])]:[])];
+  const fonts=[G('Font',0,[opts('font',[['sans','Sans'],['serif','Serif'],['mono','Mono'],['display','Display'],['script','Script'],['round','Rounded']],3)]),
+    G('Text color',0,[swatches('textc',OPQ)])];
+  const text=[B('field','Type a word or short phrase',{input:1,val:S.txt}),...emo,...fonts,G('Background',0,[swatches('textbg',GRD)])];
+  const dp=(i,a,l)=>B('icon','',{icon:i,aria:l,act:a}),gap=()=>F({},[]);
+  const image=[B('soft',S.imgName?'Replace image':'Upload image',{block:1,act:'upload'}),S.imgName&&RO('File',esc(S.imgName)),S.imgErr&&RO('Problem',esc(S.imgErr)),
+    G('Scale',0,[opts('iscale',[['fit','Fit whole'],['cover','Cover'],['0.5','50%'],['1','100%'],['1.5','150%'],['2','200%']],3),
+      F({dir:'row',g:'in',al:'center'},[dp('minus','sm','Smaller'),RO('Scale',s=>Math.round(S.scale*100)+'%',{size:'md'}),dp('plus','sp','Larger')])]),
+    F({g:'in'},[{t:'h',s:'Rotate and flip'},
+      F({dir:'row',g:'in',al:'center'},[B('soft','−15°',{act:'rl',aria:'Rotate counterclockwise 15 degrees'}),B('soft','+15°',{act:'rr',aria:'Rotate clockwise 15 degrees'}),RO('Angle',s=>S.rot+'°',{size:'md'})]),
+      F({dir:'row',g:'in'},[B('soft','Flip left/right',{act:'fh',pressed:S.fh}),B('soft','Flip up/down',{act:'fv',pressed:S.fv})])]),
+    F({g:'in'},[{t:'h',s:'Position'},
+      F({cols:[36,36,36],g:'tight'},[gap(),dp('up','mu','Move up'),gap(),dp('left','ml','Move left'),dp('center','mc','Center image'),dp('right','mr','Move right'),gap(),dp('down','md','Move down'),gap()]),
+      RO('Offset from center',s=>S.tx+', '+S.ty+'\u00a0mm',{size:'md'})]),
+    G('Saturation',0,[opts('sat',[['0','Gray'],['0.5','Muted'],['1','Natural'],['1.5','Vivid'],['2','Intense'],['3','Extreme']],3)])];
+  const isT=S.source==='text',dch=Array.from(S.dtxt);
+  const diamond=[F({g:'in'},[{t:'h',s:'Diamond count'},
+      F({dir:'row',g:'in',al:'center'},[dp('minus','dm','Fewer diamonds'),RO('Diamonds',s=>S.dn+' (max '+maxN()+')',{size:'md'}),dp('plus','dp','More diamonds')])]),
+    ...(isT?[B('field','Type up to '+S.dn+' character'+(S.dn>1?'s':''),{input:1,val:S.dtxt,k2:'dtxt'}),...emo,...fonts]:[]),
+    ...(S.source==='check'?check:[G('Diamonds',0,[CH('dsel','ml',Array.from({length:S.dn},(_,i)=>({id:String(i),label:isT?(dch[i]||'–'):String(i+1),m:{c:pick(OPQ,dfill(i))}})),{cols:5,ratio:1})]),
+    G('Diamond color',0,[swatches('dc',OPQ)]),B('soft','Apply to all diamonds',{block:1,act:'dall'})])];
+  return F({frame:1,collapse:1,cols:['f',460],rows:[84,'f'],g:'between'},[
+
+  F({span:1,dir:'row',jc:'space-between',al:'center'},[
+    F({dir:'row',g:'in',al:'center'},[B('text','',{icon:'back',aria:'Back'}),B('text','Save',{icon:'save'}),B('text','Load existing configuration',{icon:'load',hide:'sm'})]),
+    F({dir:'row',g:'in',al:'center'},[
+      F({rule:1},[RO('Total',kes(q.total,0),{size:'md',flip:1})]),
+      B('soft','Summary',{hide:'sm'}),B('solid','Checkout')])
+  ]),
+
+  F({g:'between'},[
+    SF('stage',{grow:1,raw:1},[
+      u3?{t:'v3d'}:bs?{t:'beadsvg',svg:bs}:{t:'media',b:rect?VIEWS.find(v=>v.id===S.view).m.b:[14,14],size:'fill'},
+      SF('media',{pin:'bl',raw:1},[
+        F({scroll:'y',shrink:1,g:'in'},[   /* panels: scroll when there are more than the overlay may show */
+          pair&&F({dir:'row',g:'between',wrap:1},[G('Earrings',0,[CH('pm','l',[{id:'same',label:'Identical'},{id:'sep',label:'Separate'}],{cols:['h','h']})]),
+            S.pm==='sep'&&G('Working on',0,[CH('ear','l',[{id:'0',label:'Earring 1'},{id:'1',label:'Earring 2'}],{cols:['h','h']})])]),
+          u3&&S.item==='bracelet'&&F({dir:'row',g:'between',wrap:1},[G('Shape',0,[CH('shape','l',[{id:'flat',label:'Flat'},{id:'circ',label:'Circular'}],{cols:['h','h']})])]),
+          S.scene&&F({dir:'row',g:'between',wrap:1},[
+            G('Background',0,[CH('bg','m',mk([['light','Light','#D9DCE0'],['mid','Mid','#8E8A92'],['dark','Dark','#2A2830']],undefined,'c'),{cols:[40,40,40],ratio:1})]),
+            G('Lighting',0,[CH('light','l',[{id:'studio',label:'Studio'},{id:'daylight',label:'Daylight'},{id:'lamp',label:'Warm lamp'}],{cols:['h','h','h']})]),S.source!=='check'&&G('Processing',0,[CH('proc','l',[{id:'dominant',label:'Dominant'},{id:'blended',label:'Blended'}],{cols:['h','h']})])])]),
+        F({scroll:'y',shrink:'soft',g:'tight'},[   /* toolbar: always visible */
+          F({dir:'row',al:'center',wrap:1},[B('text','Adjust scene',{pressed:S.scene,act:'scene'}),B('text','Real size',{pressed:S.real,act:'real'}),B('text','3D view',{pressed:S.three,act:'three'}),B('text','',{icon:'expand',aria:'Fullscreen',act:'fs'})]),
+          why3()&&RO('3D view',why3()),
+          u3&&F({dir:'row',al:'center',wrap:1},[B('text','Orbit',{pressed:S.mm==='orbit',act:'mo'}),B('text','Pan',{pressed:S.mm==='pan',act:'mp'}),B('text','−',{act:'zo',aria:'Zoom out'}),B('text','+',{act:'zi',aria:'Zoom in'}),B('text','Reset view',{act:'rs'})])])])
+    ]),
+    F({dir:'row',g:'in',al:'center'},[CH('view','m',VIEWS,{cols:Array(6).fill(112),ratio:'7/4',scroll:'x',grow:1}),B('icon','',{icon:'next',aria:'Next views',act:'next'})])
+  ]),
+
+  F({scroll:'y',g:'between'},[
+    F({g:'in'},[
+      F({dir:'row',g:'tight',al:'baseline'},[{t:'text',v:'title',s:s=>label('form',S.form)},RO('',s=>rect?(pair?'2 × ':'')+lay().cols+' × '+lay().rows:(pair?S.dn+other().dn:S.dn)+((pair?S.dn+other().dn:S.dn)>1?' diamonds':' diamond'),{size:'tag'})]),
+      {t:'text',v:'link',s:'Bead sizes and finishes guide'}]),
+
+    SF('light',{title:step(1,'Form'),key:'form'},[G('Form',0,[cards('form',[['rect','Rectangle',[14,3],0],['diamond','Diamond chain',[8,8],0]])])]),
+    SF('light',{title:step(2,'Size'),key:'size'},[G('Item',0,[tiles('item',[['earring','Earring',[6,4]],['keychain','Keychain',[8,6]],['bracelet','Bracelet',[20,4]]],3,'4/3')]),
+      G('Length',0,[opts('len',[['S','Short, '+LT.c[0]+'\u00a0mm'],['M','Medium, '+LT.c[1]+'\u00a0mm'],['L','Long, '+LT.c[2]+'\u00a0mm']],3)])]
+      .concat(rect?[G('Width',0,[opts('wid',[['S','Slender, '+LT.r[0]+'\u00a0mm'],['M','Regular, '+LT.r[1]+'\u00a0mm'],['L','Thick, '+LT.r[2]+'\u00a0mm']],3)])]:[])),
+    SF('light',{title:step(3,'Bead size'),key:'bead'},[G('Bead size',0,[tiles('bead',BEADS,4,1)])]),
+    SF('light',{title:step(4,'Ground color'),key:'ground'},[G('Color',0,[swatches('ground',GRD)])]),
+    SF('light',{title:step(5,'Source'),key:'source'},[G('Source type',0,[cards('source',SRC)])]
+      .concat(rect?(S.source==='solid'?solid:S.source==='text'?text:S.source==='check'?check:image):diamond)),
+    SF('light',{title:step(6,'Outline'),key:'outline'},[G('Outline',0,[opts('outline',[['none','None'],['on','Outline']],2)])]
+      .concat(S.outline==='on'?[G('Outline color',0,[swatches('outlinec',OPQ)])]:[])),
+    SF('light',{title:step(7,'Finish'),key:'finish'},[G('Bead finish',0,[cards('finish',[['matte','Matte',[10,5]],['glossy','Opaque glossy',[10,5]],['glass','Glass',[10,5]],['metal','Metallic',[10,5]]],'mli')])]),
+
+    SF('light',{title:step(8,'Summary'),key:'summary'},[
+      F({cols:2,g:'in'},[
+        RO('Form',s=>label('form',S.form)),RO('Size',s=>sizeText()),
+        RO('Bead size',s=>label('bead',S.bead)),per('Ground',d=>nm(GRD,d.ground)),
+        per('Source',d=>({solid:rect?'Solid & stripes':'Fill',text:'Text',check:'Checkerboard',image:'Image'})[d.source]),per('Outline',d=>d.outline==='on'?'Outline, '+nm(OPQ,d.outlinec):'None'),
+        per('Finish',d=>({matte:'Matte',glossy:'Opaque glossy',glass:'Glass',metal:'Metallic'})[d.finish]),RO('Beads',s=>String(q.n))]),
+      RO('Total price',kes(q.total,0),{size:'big'}),
+      F({g:'in'},[B('solid','Checkout',{block:1}),B('soft','Save',{block:1})])])
+  ])
+  ]);
+};
+
+/* lookup only (names for selected ids), rebuilt on every draw */
+let sets=[];const walk=n=>{if(n&&n.t==='choices')sets.push(n);(n&&n.c||[]).forEach(walk)};
+const label=(k,id)=>((sets.find(x=>x.key===k)||{items:[]}).items.find(i=>i.id===id)||{}).label;
+
+/* ===== 2D ENGINE (rectangle): pure, state in, svg out. Ported from the studio quantizer ===== */
+const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+const lin=c=>(c/=255)<=.04045?c/12.92:Math.pow((c+.055)/1.055,2.4);
+const lab=(r,g,b)=>{r=lin(r);g=lin(g);b=lin(b);const f=t=>t>.008856?Math.cbrt(t):7.787*t+16/116;
+  const x=f((r*.4124564+g*.3575761+b*.1804375)/.95047),y=f(r*.2126729+g*.7151522+b*.072175),z=f((r*.0193339+g*.119192+b*.9503041)/1.08883);
+  return[116*y-16,500*(x-y),200*(y-z)]};
+const PALETTE=[['a83246','Berry Red'],['8c3f30','Brick Red'],['c0392b','Apple Red'],['5c1f2e','Wine Maroon'],['8aa6bd','Sky Blue'],['3b5d76','Denim Blue'],['2f6fa8','Jay Blue'],['22344a','Navy'],['8a9c4a','Sunlit Leaf'],['3a5c44','Shade Leaf'],['5a7a3a','Grass Green'],['6e7458','Olive Sage'],['e3b5a0','Fair Skin'],['c08862','Tan Skin'],['7a4a3a','Deep Skin'],['5c4530','Bark Brown'],['d4af6a','Golden Blonde'],['c9942f','Sunlit Gold'],['d9622b','Sunset Orange'],['a85a2e','Autumn Orange'],['8a7390','Lavender Dusk'],['5a3a52','Deep Plum'],['ece3d2','Warm White'],['dfe6e6','Cool White'],['8c8475','Warm Grey'],['76828a','Cool Grey'],['1c1813','True Black'],['332c24','Soft Black'],['2a8a82','Vivid Teal']];   /* the studio's RAW_PALETTE: hex plus the name a kit order needs */
+const PAL29=PALETTE.map(([h])=>{const n=parseInt(h,16),r=n>>16,g=n>>8&255,b=n&255;return{h:'#'+h,l:lab(r,g,b)}});
+const BEAD_NAME=Object.fromEntries(PALETTE.map(([h,n])=>['#'+h,n]));
+const near=(r,g,b)=>{const l=lab(r,g,b);let best=PAL29[0],bd=1e9;for(const p of PAL29){const d=(l[0]-p.l[0])**2+(l[1]-p.l[1])**2+(l[2]-p.l[2])**2;if(d<bd){bd=d;best=p}}return best.h};
+const hx=h=>{const n=parseInt(h.slice(1),16);return[n>>16,n>>8&255,n&255]};
+const pick=(a,id)=>(a.find(x=>x[0]===id)||a[0])[2];
+const BD={'5':[4.55,3.19],'6':[4,2.8],'8':[3,2.1],'10':[2.3,1.61],'11':[2.1,1.47],'12':[1.9,1.33],'13':[1.7,1.19],'15':[1.45,1.02]};
+const LV={bracelet:{c:[90,120,150],r:[30,45,60]},earring:{c:[20,30,45],r:[10,20,30]},keychain:{c:[30,60,90],r:[20,40,60]}};   /* MODE_LEVELS: columns = length, rows = width */
+const IDX={S:0,M:1,L:2};
+const LEN_NAME={S:'Short',M:'Medium',L:'Long'},WID_NAME={S:'Slender',M:'Regular',L:'Thick'};   /* the same words the Length and Width options use */
+const sizeText=()=>{const LT=LV[S.item],e=S.item==='earring',mm=n=>' ('+n+'\u00a0mm)';return (e?'Earring pair':label('item',S.item))+', '+LEN_NAME[S.len]+mm(LT.c[IDX[S.len]])+(S.form==='rect'?' × '+WID_NAME[S.wid]+mm(LT.r[IDX[S.wid]]):'')+(e?' each':'')};
+const FONTS={sans:'Arial, sans-serif',serif:'Georgia, serif',mono:"'Courier New', monospace",display:'Impact, sans-serif',script:"'Brush Script MT', cursive",round:"'Comic Sans MS', cursive"};
+const lay=()=>{const[d,p]=BD[S.bead],LT=LV[S.item],w=LT.c[IDX[S.len]],h=LT.r[IDX[S.wid]];let rows=Math.round(h/p);if(rows%2)rows++;return{d,p,cols:Math.max(1,Math.round(w/d)),rows:Math.max(2,rows)}};
+let IMG=null;
+const fileIn=document.createElement('input');fileIn.type='file';fileIn.accept='image/*';fileIn.style.display='none';document.body.appendChild(fileIn);
+fileIn.onchange=()=>{const f=fileIn.files[0];fileIn.value='';if(!f)return;
+  const fail=m=>{S.imgErr=m;draw()};
+  if(!/^image\//.test(f.type))return fail('That file is not an image');
+  const rd=new FileReader();                    /* data URL, not a blob URL: sandboxed previews block blob: images */
+  rd.onerror=()=>fail('Could not read that file');
+  rd.onload=()=>{const im=new Image();
+    im.onload=()=>{IMG=im;S.imgErr='';S.imgName=f.name;S.imgId=++IMGSEQ;S.scale=1;S.rot=0;S.fh=S.fv=false;S.tx=S.ty=0;draw()};
+    im.onerror=()=>fail('Could not open that image. Try a JPG or PNG');
+    im.src=rd.result};
+  rd.readAsDataURL(f)};
+const fitS=m=>{if(!IMG)return 1;const L=lay(),Wm=(L.cols+.5)*L.d,r=L.rows*L.p/(Wm*IMG.naturalHeight/IMG.naturalWidth);return +(m===1?Math.min(1,r):Math.max(1,r)).toFixed(2)};
+const preset=()=>{for(const id of['fit','cover','0.5','1','1.5','2']){const v=id==='fit'?fitS(1):id==='cover'?fitS(2):+id;if(Math.abs(v-S.scale)<.005)return id}};
+const sv=k=>k==='scol'?S.stripes[+S.sel].c:k==='ccol'?S.chk[+S.csel]:k==='swt'?String(S.stripes[+S.sel].w):k==='iscale'?preset():k==='proc'?S.procBy[S.source]:k==='dc'?dfill(+S.dsel):S[k];
+const put=(k,v)=>{const t=S.stripes[+S.sel];if(k==='scol')t.c=v;else if(k==='ccol')S.chk[+S.csel]=v;else if(k==='swt')t.w=+v;else if(k==='iscale')S.scale=v==='fit'?fitS(1):v==='cover'?fitS(2):+v;else if(k==='pm'){if(v==='same'){S.pm='same';D[0]=D[1]=null}else{S.pm='sep';D[1-(+S.ear)]=snap()}}else if(k==='ear')swapEar(v);else if(k==='dc')S.dcol[+S.dsel]=v;else if(k==='len'){S.len=v;if(IDX[S.wid]>IDX[v])S.wid=v}else if(k==='wid'){S.wid=v;if(IDX[S.len]<IDX[v])S.len=v}else if(k==='proc')S.procBy[S.source]=v;else if(k==='emoji'){const q=S.form==='diamond'?'dtxt':'txt';if(Array.from(S[q]).length<(q==='dtxt'?S.dn:24))S[q]+=v}else S[k]=v};
+const ACT={sm:()=>{S.scale=Math.max(.1,+(S.scale-.05).toFixed(2))},sp:()=>{S.scale=Math.min(3,+(S.scale+.05).toFixed(2))},
+  rl:()=>{S.rot=((S.rot-15+540)%360)-180},rr:()=>{S.rot=((S.rot+15+540)%360)-180},fh:()=>{S.fh=!S.fh},fv:()=>{S.fv=!S.fv},
+  mu:()=>{S.ty--},md:()=>{S.ty++},ml:()=>{S.tx--},mr:()=>{S.tx++},mc:()=>{S.tx=S.ty=0},emo:()=>{S.emo=!S.emo},mo:()=>{S.mm='orbit'},mp:()=>{S.mm='pan'},zo:()=>{V3.ready&&V3.zoom(1.15)},zi:()=>{V3.ready&&V3.zoom(.85)},rs:()=>{V3.ready&&V3.reset()},dm:()=>{S.dn=Math.max(1,S.dn-1)},dp:()=>{S.dn=Math.min(maxN(),S.dn+1)},dall:()=>{S.dcol=Array(S.dn).fill(dfill(+S.dsel))},
+  addck:()=>{if(S.chk.length<6){const nx=OPQ.find(o=>!S.chk.includes(o[0]));S.chk.push(nx?nx[0]:'gray');S.csel=String(S.chk.length-1)}},
+  delck:()=>{if(S.chk.length>2){S.chk.splice(+S.csel,1);S.csel=String(Math.min(+S.csel,S.chk.length-1))}},
+  addst:()=>{S.stripes.push({c:'gray',w:1});S.sel=String(S.stripes.length-1)},
+  delst:()=>{if(S.stripes.length>1){S.stripes.splice(+S.sel,1);S.sel=String(Math.min(+S.sel,S.stripes.length-1))}}};
+let IMGSEQ=0,IDSEQ=0;
+const MEMO=new Map(),memo_=(k,v)=>{v.id=++IDSEQ;MEMO.set(k,v);if(MEMO.size>10)MEMO.delete(MEMO.keys().next().value);return v};
+/* ===== 2D ENGINE (diamond chain): geometry, outline map and quantizer ported from DiamondChainCore ===== */
+const bin=(m,img,i)=>{const key=(img[i]>>4)<<8|(img[i+1]>>4)<<4|img[i+2]>>4;let b=m.get(key);if(!b)m.set(key,b=[0,0,0,0]);b[0]++;b[1]+=img[i];b[2]+=img[i+1];b[3]+=img[i+2]};
+const BLEND_WITHIN=.35;   /* Blended mixes the top two colors only when the second has at least (1 - this) = 65% of the first's pixels; a 90/10 split still stays the dominant color */
+const fromBins=(m,dom,ground)=>{const bins=[...m.values()].sort((a,b)=>b[0]-a[0]);if(!bins.length)return ground;
+  const a=bins[0],b=!dom&&bins[1]&&bins[1][0]>=a[0]*(1-BLEND_WITHIN)?bins[1]:[0,0,0,0],n=a[0]+b[0],mix=i=>Math.round((a[i]+b[i])/n);return near(mix(1),mix(2),mix(3))};
+const dLen=()=>LV[S.item].c[IDX[S.len]];
+const rowsFor=(n,L,p)=>Math.max(2,2*Math.round(L/n/Math.SQRT2/p/2));
+const maxN=()=>{const L=dLen(),p=BD[S.bead][1];let n=0;while(n<60&&rowsFor(n+1,L,p)>=6)n++;return Math.max(1,n)};   /* DC_MIN_ROWS = 6 */
+const dfill=i=>S.dcol[i]||(S.source==='text'?'ink':'pink');
+const clampD=()=>{S.dn=Math.min(Math.max(1,S.dn),maxN());if(+S.dsel>=S.dn)S.dsel=String(S.dn-1);S.dtxt=Array.from(S.dtxt).slice(0,S.dn).join('')};
+function dc(n){const[d,p]=BD[S.bead],L=dLen(),rows=rowsFor(n,L,p),cols=Math.max(1,Math.round(rows*p/d)),lw=(cols+.5)*d,lh=rows*p,c=Math.SQRT1_2;
+  const rot=(x,y)=>[(x-y)*c,(x+y)*c],TR=rot(lw/2,-lh/2),BL=rot(-lw/2,lh/2),nu=rot(-2.5*d,2*p),sx=TR[0]-BL[0]+nu[0],sy=TR[1]-BL[1]+nu[1];
+  const bw=(lw+lh)*c,centers=[];for(let i=0;i<n;i++)centers.push({cx:i*sx,cy:i*sy});
+  let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;centers.forEach(q=>{x0=Math.min(x0,q.cx-bw/2);x1=Math.max(x1,q.cx+bw/2);y0=Math.min(y0,q.cy-bw/2);y1=Math.max(y1,q.cy+bw/2)});
+  const ox=(x0+x1)/2,oy=(y0+y1)/2;centers.forEach(q=>{q.cx-=ox;q.cy-=oy});
+  return{n,d,p,rows,cols,lw,lh,centers,bbox:{minX:x0-ox,maxX:x1-ox,minY:y0-oy,maxY:y1-oy},beads:n*(cols*rows-4)}}
+/* ===== CHECKERBOARD PLANNER: pure. Lattice size in, a color index per bead out. Colors are assigned from position, never sampled from a picture ===== */
+const CHK_ACROSS=4;   /* aim for about this many squares across the narrow side */
+const CHK=new Map();
+function chkPlan(cols,rows,d,p,k,diam){
+  const key=[cols,rows,d,p,k,diam?1:0].join();if(CHK.has(key))return CHK.get(key);
+  const n=cols*rows,bx=new Float64Array(n),br=new Int32Array(n),real=new Uint8Array(n);let N=0;
+  for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){const i=r*cols+c;bx[i]=c+(r%2?.5:0)+.5;br[i]=r;   /* x in bead units, with the half-bead stagger of odd rows */
+    real[i]=diam&&((r<2&&c===cols-1)||(r>=rows-2&&c===0))?0:1;N+=real[i]}   /* a diamond's trimmed corner beads do not count toward the balance */
+  const pats=[];   /* tile patterns first (true 2x2 / 2x3 checks), then every linear pattern; each guarantees touching squares never share a color */
+  for(let u=2;u<k;u++)if(k%u===0&&k/u>=2){const v=k/u;pats.push((ix,iy)=>ix%u+u*(iy%v))}
+  for(let a=1;a<k;a++)for(let b=1;b<k;b++)pats.push((ix,iy)=>(a*ix+b*iy)%k);
+  /* near-square square sizes (in beads), a bead being wider than it is tall */
+  const cand=new Map();
+  for(let cw=1;cw<=cols;cw++){const ideal=cw*d/p;
+    for(const ch of new Set([Math.floor(ideal),Math.ceil(ideal)])){if(ch<1||ch>rows)continue;
+      const err=Math.abs(cw*d-ch*p)/Math.max(cw*d,ch*p);if(err<=.25)cand.set(cw+'x'+ch,{cw,ch,err,across:Math.min(cols/cw,rows/ch)})}}
+  let list=[...cand.values()];
+  const big=list.filter(q=>q.cw>=2&&q.ch>=2&&q.across>=2);
+  list=big.length?big:list.length?list:[{cw:1,ch:1,err:1,across:Math.min(cols,rows)}];
+  list.sort((a,b)=>Math.abs(a.across-CHK_ACROSS)-Math.abs(b.across-CHK_ACROSS)||a.err-b.err);
+  const results=list.slice(0,8).map(q=>{const{cw,ch}=q;let best=null;
+    /* slide the grid of squares so the cut-off squares at the edges balance: only the few shifts that make the left/right (top/bottom) partial squares most alike are tried */
+    const sh=(len,sz,off)=>{const l=sz-off,rem=(len-l)%sz;return Math.abs(l-(rem===0?sz:rem))};
+    const xs=[...Array(cw).keys()].sort((a,b)=>sh(cols+.5,cw,a)-sh(cols+.5,cw,b)||a-b).slice(0,3),ys=[...Array(ch).keys()].sort((a,b)=>sh(rows,ch,a)-sh(rows,ch,b)||a-b).slice(0,3);
+    for(const ox of xs)for(const oy of ys){
+      const NX=Math.floor((cols+1+ox)/cw)+2,NY=Math.floor((rows+oy)/ch)+2,cnt=new Int32Array(NX*NY);
+      for(let i=0;i<n;i++)if(real[i])cnt[Math.floor((br[i]+oy)/ch)*NX+Math.floor((bx[i]+ox)/cw)]++;
+      const asym=sh(cols+.5,cw,ox)+sh(rows,ch,oy);
+      pats.forEach((f,pi)=>{const t=new Array(k).fill(0);
+        for(let iy=0;iy<NY;iy++)for(let ix=0;ix<NX;ix++){const c=cnt[iy*NX+ix];if(c)t[f(ix,iy)]+=c}
+        const imb=Math.max(...t)-Math.min(...t);
+        if(!best||imb<best.imb||(imb===best.imb&&(asym<best.asym||(asym===best.asym&&pi<best.pi))))best={imb,asym,pi,ox,oy,counts:t}})}
+    return{...q,...best}});
+  const tol=Math.max(2,Math.ceil(N*.01)),ok=results.filter(r=>r.imb<=tol),T=r=>Math.abs(r.across-CHK_ACROSS);
+  const pickd=(ok.length?ok:results).slice().sort((a,b)=>ok.length?T(a)-T(b)||a.imb-b.imb:a.imb-b.imb||T(a)-T(b))[0];
+  const f=pats[pickd.pi],map=new Uint8Array(n);
+  for(let i=0;i<n;i++)map[i]=f(Math.floor((bx[i]+pickd.ox)/pickd.cw),Math.floor((br[i]+pickd.oy)/pickd.ch));
+  return CHK.set(key,{map,cw:pickd.cw,ch:pickd.ch,ox:pickd.ox,oy:pickd.oy,counts:pickd.counts,imb:pickd.imb,k}).get(key)}
+
+const isOut=(g,r,cc,open)=>{const{rows,cols}=g,rm=r<2&&!open?cols-2:cols-1,lm=r>=rows-2?1:0;   /* open: this diamond's far corner is a free end, not a junction, so it is plain perimeter with no connector bead */
+  if(!(r===0||r===rows-1||cc===lm||cc===rm))return false;if(!open&&r===1&&cc===rm)return false;if(r===rows-2&&cc===lm)return false;return true};
+function diamond2d(){
+  const k=JSON.stringify(['D',S.bead,S.item,S.len,S.dn,S.source,S.dtxt,S.dcol.slice(0,S.dn),S.font,S.textc,S.outline,S.outlinec,S.ground,S.procBy[S.source],S.source==='check'?S.chk:0]);
+  if(MEMO.has(k))return MEMO.get(k);
+  const g=dc(S.dn),RES=10,{d,p,rows,cols,lw,lh,bbox}=g,bwid=bbox.maxX-bbox.minX,bhei=bbox.maxY-bbox.minY;
+  const Q=Math.ceil((lw+lh)*Math.SQRT1_2*RES)+2,cv=document.createElement('canvas');cv.width=cv.height=Q;
+  const x=cv.getContext('2d',{willReadFrequently:true}),ground=pick(GRD,S.ground),chars=Array.from(S.dtxt);
+  const dom=S.procBy[S.source]==='dominant',oc=near(...hx(pick(OPQ,S.outlinec)));
+  const isC=S.source==='check',ck=isC?chkPlan(cols,rows,d,p,S.chk.length,true):null,cks=isC?S.chk.map(id=>near(...hx(pick(OPQ,id)))):null;   /* one plan, restarted in every diamond, so each diamond looks the same */
+  const rc=Math.SQRT1_2,sBw=d*RES,sBh=p*RES,hw=lw*RES/2,hh=lh*RES/2,cx=Q/2,cy=Q/2;
+  let out='<rect x="'+bbox.minX+'" y="'+bbox.minY+'" width="'+bwid+'" height="'+bhei+'" rx=".6" fill="'+ground+'"/>';
+  const rw=(d-.1).toFixed(2),rh=(p-.1).toFixed(2),rx=(d*.3).toFixed(2);
+  const dcols=[],bl=[];
+  const free=S.item==='earring';   /* an earring hangs from one end only: the first diamond keeps its attachment notch, the last diamond's far corner keeps its beads */
+  g.centers.forEach((c,i)=>{const last=free&&i===g.n-1;
+    /* each diamond is sampled from its OWN canvas: neighbours interlock at the junction, so a shared canvas let one diamond's fill or glyph bleed into the next */
+    x.setTransform(1,0,0,1,0,0);x.clearRect(0,0,Q,Q);
+    x.translate(cx,cy);x.rotate(Math.PI/4);x.fillStyle=pick(OPQ,dfill(i));x.fillRect(-hw,-hh,2*hw,2*hh);x.setTransform(1,0,0,1,0,0);
+    if(S.source==='text'){x.font='bold '+Math.floor(lh*RES*.75)+'px '+FONTS[S.font];x.textAlign='center';x.textBaseline='middle';x.fillStyle=pick(OPQ,S.textc);x.fillText(chars[i]||' ',cx,cy+lh*RES*.1)}
+    const img=isC?null:x.getImageData(0,0,Q,Q).data;
+    out+='<g transform="translate('+c.cx.toFixed(3)+' '+c.cy.toFixed(3)+') rotate(45)">';
+    for(let r=0;r<rows;r++)for(let cc=0;cc<cols;cc++){
+      if((r<2&&cc===cols-1&&!last)||(r>=rows-2&&cc===0))continue;       /* corner trim opens the junction notch */
+      const x0=(r%2?sBw/2:0)+cc*sBw,y0=r*sBh;let mnx=1e9,mny=1e9,mxx=-1e9,mxy=-1e9;
+      for(const[lx,ly]of[[x0,y0],[x0+sBw,y0],[x0+sBw,y0+sBh],[x0,y0+sBh]]){const dx=lx-hw,dy=ly-hh,qx=cx+(dx-dy)*rc,qy=cy+(dx+dy)*rc;mnx=Math.min(mnx,qx);mxx=Math.max(mxx,qx);mny=Math.min(mny,qy);mxy=Math.max(mxy,qy)}
+      const m=new Map();
+      if(!isC)for(let yy=Math.max(0,Math.floor(mny));yy<=Math.min(Q-1,Math.ceil(mxy));yy++)for(let xx=Math.max(0,Math.floor(mnx));xx<=Math.min(Q-1,Math.ceil(mxx));xx++){
+        const dx=xx-cx,dy=yy-cy,lx=hw+(dx+dy)*rc,ly=hh+(dy-dx)*rc;
+        if(lx<x0||lx>=x0+sBw||ly<y0||ly>=y0+sBh)continue;bin(m,img,(yy*Q+xx)*4)}
+      const col=S.outline==='on'&&isOut(g,r,cc,last)?oc:isC?cks[ck.map[r*cols+cc]]:fromBins(m,dom,ground);dcols.push(col);{const bx=(r%2?d/2:0)+cc*d+d/2-lw/2,by=r*p+p/2-lh/2;bl.push({x:c.cx+(bx-by)*rc,y:c.cy+(bx+by)*rc,a:Math.PI/4,c:col})}   /* the bead's centre, turned 45deg with its diamond */
+      out+='<rect x="'+((r%2?d/2:0)+cc*d-lw/2+.05).toFixed(2)+'" y="'+(r*p-lh/2+.05).toFixed(2)+'" width="'+rw+'" height="'+rh+'" rx="'+rx+'" fill="'+col+'"/>'}
+    out+='</g>'});
+  return memo_(k,{vb:(bbox.minX-4)+' '+(bbox.minY-4)+' '+(bwid+8)+' '+(bhei+8),s:out,colors:dcols,chk:ck,d,p,bl,box:{x0:bbox.minX,y0:bbox.minY,x1:bbox.maxX,y1:bbox.maxY}});
+}
+
+function bead2d(){
+  const k=JSON.stringify(['R',S.bead,S.item,S.len,S.wid,S.ground,S.source,S.stripes,S.font,S.textc,S.textbg,S.txt,S.outline,S.outlinec,S.sat,S.imgId,S.scale,S.rot,S.fh,S.fv,S.tx,S.ty,S.procBy[S.source],S.source==='check'?S.chk:0]);
+  if(MEMO.has(k))return MEMO.get(k);
+  const{d,p,cols,rows}=lay(),RES=10,bw=d*RES,bh=p*RES,W=Math.ceil((cols+.5)*bw),H=Math.ceil(rows*bh);
+  const cv=document.createElement('canvas');cv.width=W;cv.height=H;
+  const x=cv.getContext('2d',{willReadFrequently:true}),ground=pick(GRD,S.ground);
+  x.fillStyle=ground;x.fillRect(0,0,W,H);
+  if(S.source==='solid'){                       /* weighted stripes share the full height, as in the studio */
+    const tot=S.stripes.reduce((a,t)=>a+t.w,0);let yy=0;
+    for(const t of S.stripes){const hh=t.w/tot*H;x.fillStyle=pick(OPQ,t.c);x.fillRect(0,Math.round(yy),W,Math.ceil(hh));yy+=hh}
+  }else if(S.source==='image'){                 /* same draw order as _drawImageToContext: translate, rotate, flip, draw */
+    if(IMG){const iw=IMG.naturalWidth,ih=IMG.naturalHeight,fw=W*S.scale,fh=ih*(W/iw)*S.scale;
+      const t=document.createElement('canvas');t.width=W;t.height=H;const y=t.getContext('2d',{willReadFrequently:true});
+      y.translate(W/2+S.tx*RES,H/2+S.ty*RES);y.rotate(S.rot*Math.PI/180);y.scale(S.fh?-1:1,S.fv?-1:1);y.drawImage(IMG,-fw/2,-fh/2,fw,fh);
+      const k=+S.sat;if(k!==1){const q=y.getImageData(0,0,W,H),a=q.data;    /* saturate the image only, never the ground */
+        for(let i=0;i<a.length;i+=4)if(a[i+3]){const l=.213*a[i]+.715*a[i+1]+.072*a[i+2];a[i]=l+(a[i]-l)*k;a[i+1]=l+(a[i+1]-l)*k;a[i+2]=l+(a[i+2]-l)*k}
+        y.putImageData(q,0,0)}
+      x.drawImage(t,0,0)}
+  }else if(S.source==='text'){                  /* text, shrunk to fit the grid width */
+    x.fillStyle=pick(GRD,S.textbg);x.fillRect(0,0,W,H);
+    const t=S.txt||' ',fam=FONTS[S.font];let fs=H*.75;x.font='bold '+fs+'px '+fam;
+    const w=x.measureText(t).width;if(w>W*.94)fs*=W*.94/w;
+    x.font='bold '+fs+'px '+fam;x.textAlign='center';x.textBaseline='middle';x.fillStyle=pick(OPQ,S.textc);x.fillText(t,W/2,H/2);
+  }
+  const cells=[];let ck=null;
+  if(S.source==='check'){ck=chkPlan(cols,rows,d,p,S.chk.length,false);const cs=S.chk.map(id=>near(...hx(pick(OPQ,id))));   /* colors come from position, snapped to the bead palette like every other source */
+    for(let i=0;i<cols*rows;i++)cells.push(cs[ck.map[i]])}
+  else{const img=x.getImageData(0,0,W,H).data,dom=S.procBy[S.source]==='dominant';
+  for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){   /* per bead: top-2 color bins, blended, matched to the palette */
+    const x0=Math.floor((r%2?bw/2:0)+c*bw),y0=Math.floor(r*bh),x1=Math.min(W,Math.ceil(x0+bw)),y1=Math.min(H,Math.ceil(y0+bh)),m=new Map();
+    for(let yy=y0;yy<y1;yy++)for(let xx=x0;xx<x1;xx++){bin(m,img,(yy*W+xx)*4)}
+    cells.push(fromBins(m,dom,ground))}}
+  if(S.outline==='on'){const oc=near(...hx(pick(OPQ,S.outlinec)));
+    cells.forEach((_,i)=>{const r=i/cols|0,c=i%cols;if(r===0||r===rows-1||c===0||c===cols-1)cells[i]=oc})}
+  const pw=(cols+.5)*d,ph=rows*p,rw=(d-.1).toFixed(2),rh=(p-.1).toFixed(2),rx=(d*.3).toFixed(2);
+  let out='<rect width="'+pw+'" height="'+ph+'" rx=".6" fill="'+ground+'"/>';
+  cells.forEach((col,i)=>{const r=i/cols|0,c=i%cols;out+='<rect x="'+((r%2?d/2:0)+c*d+.05).toFixed(2)+'" y="'+(r*p+.05).toFixed(2)+'" width="'+rw+'" height="'+rh+'" rx="'+rx+'" fill="'+col+'"/>'});
+  return memo_(k,{vb:'-4 -4 '+(pw+8)+' '+(ph+8),s:out,cols,rows,cells,chk:ck,d,p,bl:cells.map((col,i)=>{const r=i/cols|0,c=i%cols;return{x:(r%2?d/2:0)+c*d+d/2-cols*d/2,y:r*p+p/2-rows*p/2,a:0,c:col}}),box:{x0:0,y0:0,x1:pw,y1:ph}});
+}
+
+/* ===== 3D VIEWER (flat): ported from Viewer3D. Peyote beads are rings with a VERTICAL hole (3.0 x 1.6 ring, scaled to the real bead) ===== */
+let GRID=null;
+const BGC={light:0xD9DCE0,mid:0x8E8A92,dark:0x2A2830};
+const BEAD={pathR:1,tubeW:1,tubeH:1.6};
+/* surface finishes, one preset each on the studio's MeshPhysicalMaterial model (em = emissive, me = metalness, ro = roughness, cc = clearcoat, op = opacity, env = reflection strength).
+   glossy and glass are the studio's material at glass = 0% and 100%; matte and metallic are new */
+const FIN={matte:{em:.04,me:0,ro:.85,cc:0,ccr:.6,op:1,env:0},glossy:{em:.08,me:.18,ro:.22,cc:.55,ccr:.18,op:1,env:0},
+  glass:{em:.14,me:.18,ro:.16,cc:.85,ccr:.1,op:.78,env:0},metal:{em:0,me:1,ro:.3,cc:.3,ccr:.2,op:1,env:1.2}};
+const V3={ready:false,fail:false,grid:null,gk:'',bk:'',fit:'',meshes:[],mats:new Map(),geo:null,raf:0,drag:null,sph:{r:20,theta:.3,phi:Math.PI/3.4}};
+/* ===== CIRCULAR (bracelets): bend the flat bead list around a ring. Pure, so it can be tested without WebGL ===== */
+const ARC3=Math.PI*5/3;   /* 300 degrees, the studio's bracelet arc; the open 60 degrees is the clasp gap and sits at the back, out of sight */
+function ring3(bl,d){   /* bead x becomes an angle t around the ring; y stays the height; z falls away behind the front. Each bead keeps its own turn (a) */
+  let x0=1e9,x1=-1e9;bl.forEach(b=>{x0=Math.min(x0,b.x);x1=Math.max(x1,b.x)});
+  const R=Math.max((x1-x0)/ARC3,d),xc=(x0+x1)/2;
+  return{R,bl:bl.map(b=>{const t=(b.x-xc)/R;return{...b,x:R*Math.sin(t),z:R*Math.cos(t)-R,t}})}}
+const sh3=()=>S.item==='bracelet'&&S.shape==='circ'?'circ':'flat';
+const ok3=()=>typeof THREE!=='undefined'&&!V3.fail;
+const why3=()=>!S.three?'':!ok3()?'The 3D library could not load':!GRID?'Add a source first':'';
+
+function profile3(w,h,r,seg){const pts=[],hw=w/2,hh=h/2;
+  [{cx:hw-r,cy:hh-r,a:0},{cx:-hw+r,cy:hh-r,a:Math.PI*.5},{cx:-hw+r,cy:-hh+r,a:Math.PI},{cx:hw-r,cy:-hh+r,a:Math.PI*1.5}].forEach(c=>{
+    for(let i=0;i<seg;i++){const a=c.a+Math.PI*.5*(i/seg);pts.push({x:c.cx+Math.cos(a)*r,y:c.cy+Math.sin(a)*r,nx:Math.cos(a),ny:Math.sin(a)})}});
+  return pts}
+function beadGeo3(pathR,tubeW,tubeH,cornerR){
+  class CirclePath extends THREE.Curve{constructor(R){super();this.R=R}getPoint(t){const a=t*Math.PI*2;return new THREE.Vector3(Math.cos(a)*this.R,0,Math.sin(a)*this.R)}}
+  const profile=profile3(tubeH,tubeW,cornerR,3),N=profile.length,segs=48,path=new CirclePath(pathR),frames=path.computeFrenetFrames(segs,true);
+  const pos=[],nor=[],uv=[],idx=[];
+  for(let i=0;i<=segs;i++){const k=i%segs,pt=path.getPoint(i/segs),fn=frames.normals[k],fb=frames.binormals[k];
+    for(let j=0;j<N;j++){const q=profile[j];
+      pos.push(pt.x+q.x*fn.x+q.y*fb.x,pt.y+q.x*fn.y+q.y*fb.y,pt.z+q.x*fn.z+q.y*fb.z);
+      nor.push(q.nx*fn.x+q.ny*fb.x,q.nx*fn.y+q.ny*fb.y,q.nx*fn.z+q.ny*fb.z);uv.push(i/segs,j/N)}}
+  for(let i=0;i<segs;i++)for(let j=0;j<N;j++){const a=i*N+j,b=i*N+(j+1)%N,c=(i+1)*N+j,d=(i+1)*N+(j+1)%N;idx.push(a,b,c,b,d,c)}
+  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));g.setAttribute('normal',new THREE.Float32BufferAttribute(nor,3));
+  g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));g.setIndex(idx);return g}
+function mat3(hex,fin){const key=hex+'|'+fin;let m=V3.mats.get(key);if(!m){const f=FIN[fin]||FIN.glossy;
+  m=new THREE.MeshPhysicalMaterial({color:new THREE.Color(hex),emissive:new THREE.Color(hex),emissiveIntensity:f.em,metalness:f.me,roughness:f.ro,clearcoat:f.cc,clearcoatRoughness:f.ccr,
+    transparent:f.op<.999,opacity:f.op,envMapIntensity:f.env,depthWrite:true,side:THREE.FrontSide});V3.mats.set(key,m)}return m}
+function init3(){
+  if(V3.ready)return true;if(!ok3())return false;
+  try{
+    const w=document.createElement('div');w.style.cssText='position:absolute;inset:0;touch-action:none;cursor:grab';
+    const r=new THREE.WebGLRenderer({antialias:true,alpha:false});r.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+    r.toneMapping=THREE.ACESFilmicToneMapping;r.toneMappingExposure=1.05;r.domElement.style.cssText='display:block;width:100%;height:100%';w.appendChild(r.domElement);
+    const sc=new THREE.Scene(),cam=new THREE.PerspectiveCamera(42,1,.1,800);
+    const hemi=new THREE.HemisphereLight(0xfff2e0,0x907060,.823),key=new THREE.DirectionalLight(0xfffaf4,1.198),fill=new THREE.DirectionalLight(0xfff5e8,.46),rim=new THREE.DirectionalLight(0xfff8f0,.278);
+    key.position.set(-4,8,-6);fill.position.set(6,3,4);rim.position.set(0,-5,8);[hemi,key,fill,rim].forEach(l=>sc.add(l));
+    /* a small procedural environment (soft gradient plus two light panels). Only metal reflects it, so the other finishes keep the studio's look */
+    try{const es=new THREE.Scene(),sg=new THREE.SphereGeometry(10,32,16),ps=sg.attributes.position,cl=new Float32Array(ps.count*3);
+      for(let i=0;i<ps.count;i++){const c=.2+.8*(ps.getY(i)/10*.5+.5);cl[i*3]=c;cl[i*3+1]=c;cl[i*3+2]=c}
+      sg.setAttribute('color',new THREE.BufferAttribute(cl,3));es.add(new THREE.Mesh(sg,new THREE.MeshBasicMaterial({vertexColors:true,side:THREE.BackSide})));
+      [[-5,5,3],[5,2,4]].forEach(q=>{const m=new THREE.Mesh(new THREE.PlaneGeometry(6,3),new THREE.MeshBasicMaterial({color:0xffffff,side:THREE.DoubleSide}));m.position.set(q[0],q[1],q[2]);m.lookAt(0,0,0);es.add(m)});
+      const pm=new THREE.PMREMGenerator(r);sc.environment=pm.fromScene(es,.04).texture;pm.dispose()}catch(e){console.warn('no environment map',e)}
+    V3.wrap=w;V3.r=r;V3.sc=sc;V3.camera=cam;V3.target=new THREE.Vector3();
+    V3.geo=beadGeo3(BEAD.pathR,BEAD.tubeW,BEAD.tubeH,Math.min(BEAD.tubeW,BEAD.tubeH)*.45);
+    w.addEventListener('pointerdown',e=>{V3.drag=[e.clientX,e.clientY];try{w.setPointerCapture(e.pointerId)}catch(_){}w.style.cursor='grabbing'});
+    const end=()=>{V3.drag=null;w.style.cursor='grab'};w.addEventListener('pointerup',end);w.addEventListener('pointercancel',end);
+    w.addEventListener('pointermove',e=>{if(!V3.drag)return;const dx=e.clientX-V3.drag[0],dy=e.clientY-V3.drag[1];V3.drag=[e.clientX,e.clientY];
+      if(S.mm==='orbit'){V3.sph.theta-=dx*.007;V3.sph.phi=Math.max(.08,Math.min(Math.PI-.08,V3.sph.phi+dy*.007))}
+      else{const dir=cam.getWorldDirection(new THREE.Vector3()),right=new THREE.Vector3().crossVectors(dir,cam.up).normalize();
+        V3.target.addScaledVector(right,-dx*.001*V3.sph.r);V3.target.addScaledVector(cam.up,dy*.001*V3.sph.r)}
+      V3.look()});
+    w.addEventListener('wheel',e=>{e.preventDefault();V3.zoom(e.deltaY>0?1.08:.93)},{passive:false});
+    if(window.ResizeObserver)new ResizeObserver(()=>{V3.size();V3.mark()}).observe(w);
+    V3.ready=true;return true;
+  }catch(e){V3.fail=true;console.warn('3D unavailable',e);return false}
+}
+V3.size=()=>{if(!V3.ready)return;const w=V3.wrap.clientWidth,h=V3.wrap.clientHeight;if(!w||!h)return;V3.r.setSize(w,h,false);V3.camera.aspect=w/h;V3.camera.updateProjectionMatrix()};
+V3.mark=()=>{if(!V3.ready||V3.raf)return;V3.raf=requestAnimationFrame(()=>{V3.raf=0;V3.r.render(V3.sc,V3.camera)})};   /* on demand, not a permanent loop */
+V3.look=()=>{const q=V3.sph,t=V3.target;V3.camera.position.set(t.x+q.r*Math.sin(q.phi)*Math.sin(q.theta),t.y+q.r*Math.cos(q.phi),t.z+q.r*Math.sin(q.phi)*Math.cos(q.theta));V3.camera.lookAt(t);V3.mark()};
+V3.zoom=f=>{V3.sph.r=Math.max(1.5,Math.min(V3.camera.far/2,V3.sph.r*f));V3.look()};
+V3.reset=()=>{V3.sph.theta=V3.th0==null?.3:V3.th0;V3.sph.phi=Math.PI/3.4;V3.look()};   /* angles only, as in resetCam */
+function rebuild3(){
+  V3.meshes.forEach(m=>{V3.sc.remove(m);if(m.dispose)m.dispose()});V3.meshes=[];const g=V3.grid;if(!g)return;
+  /* beads arrive in mm with a rotation (0 for rectangles, 45deg for diamonds). The ring is scaled to the real bead: diameter d across, pitch p tall.
+     Rotation is about the pattern's normal, so a diamond's holes turn with its lattice */
+  const sx=g.d/((BEAD.pathR+BEAD.tubeW/2)*2),sy=g.p/BEAD.tubeH,by=new Map(),m4=new THREE.Matrix4(),q=new THREE.Quaternion(),pv=new THREE.Vector3(),sc=new THREE.Vector3(sx,sy,sx),z=new THREE.Vector3(0,0,1);
+  const circ=sh3()==='circ',ring=circ?ring3(g.bl,g.d):null,list=circ?ring.bl:g.bl,ya=new THREE.Vector3(0,1,0),rq=new THREE.Quaternion();
+  let x0=1e9,x1=-1e9,y0=1e9,y1=-1e9;
+  list.forEach(b=>{const kk=b.c+'|'+(b.f||S.finish);(by.get(kk)||by.set(kk,[]).get(kk)).push(b);x0=Math.min(x0,b.x);x1=Math.max(x1,b.x);y0=Math.min(y0,b.y);y1=Math.max(y1,b.y)});
+  by.forEach((arr,key)=>{const hex=key.split('|')[0],fin=key.split('|')[1],im=new THREE.InstancedMesh(V3.geo,mat3(hex,fin),arr.length);im.userData.hex=hex;im.userData.fin=fin;im.frustumCulled=false;   /* one mesh per color instead of one per bead */
+    arr.forEach((b,i)=>{if(circ){pv.set(b.x,-b.y,b.z);q.setFromAxisAngle(z,-b.a);rq.setFromAxisAngle(ya,b.t);rq.multiply(q);m4.compose(pv,rq,sc)}   /* turn about the bead's own axis first, then swing it round the ring so its face points outward */
+      else m4.compose(pv.set(b.x,-b.y,0),q.setFromAxisAngle(z,-b.a),sc);im.setMatrixAt(i,m4)});im.instanceMatrix.needsUpdate=true;V3.sc.add(im);V3.meshes.push(im)});
+  const w=x1-x0+g.d,h=y1-y0+g.p,dist=Math.max(w,h)*(circ?1.5:1.6),fk=(circ?'c':'f')+w.toFixed(1)+'x'+h.toFixed(1);V3.camera.far=dist*4;V3.camera.updateProjectionMatrix();
+  if(V3.fit!==fk){V3.fit=fk;V3.th0=circ?0:.3;V3.target.set(circ?0:(x0+x1)/2,-(y0+y1)/2,circ?-ring.R:0);V3.sph={r:dist,theta:V3.th0,phi:Math.PI/3.4}}   /* refit when the object's size or shape changes; a ring is looked at head-on, its clasp gap behind it */
+  V3.look();
+}
+function sync3(){
+  if(!init3())return false;
+  try{
+    const fk=GRID&&GRID.parts.length>1?'':S.finish;   /* an earring pair's beads carry their own finish */
+    const sh=sh3();if(V3.grid!==GRID||V3.fk!==fk||V3.sh!==sh){V3.grid=GRID;V3.fk=fk;V3.sh=sh;rebuild3()}
+    if(V3.bk!==S.bg){V3.bk=S.bg;V3.sc.background=new THREE.Color(BGC[S.bg]||BGC.light)}
+    return true;
+  }catch(e){V3.fail=true;console.warn('3D unavailable',e);return false}
+}
+/* the shell redraws its DOM on every change, so the canvas lives outside it and is moved into the stage slot afterwards */
+function attach3(){const sl=app.querySelector('#v3dslot');if(!sl)return;
+  if(!sync3()){draw();return}
+  sl.appendChild(V3.wrap);V3.size();V3.mark()}
+
+/* the one renderer */
+const A=(n,ks)=>ks.filter(k=>n[k]).map(k=>`data-${k}="${n[k]}"`).join(' ');
+function R(n){
+  if(typeof n==='string')return n;
+  switch(n.t){
+  case'flow':{const st=[n.dir&&`flex-direction:${n.dir}`,n.g&&`gap:var(--${GAP[n.g]})`,n.al&&`align-items:${n.al}`,n.jc&&`justify-content:${n.jc}`,n.cols&&`grid-template-columns:${T(n.cols)}`,n.rows&&`grid-template-rows:${T(n.rows)}`].filter(Boolean).join(';');
+    return `<div data-ui="flow" ${n.cols||n.rows?'data-grid':''} ${A(n,['scroll','grow','shrink','span','frame','collapse','rule','hide','wrap'])} style="${st}">${n.c.map(R).join('')}</div>`}
+  case'surface':{const open=!n.title||S.open[n.key];
+    return `<section data-ui="surface" data-tone="${n.tone}" ${A(n,['pin','grow'])}>${n.title?R(B('head',n.title,{icon:'chev',act:'open',key:n.key,open:S.open[n.key]})):''}${open&&n.c.length?(n.raw?n.c.map(R).join(''):R(F({g:'between'},n.c))):''}</section>`}
+  case'control':if(n.input)return `<input data-ui="control" data-v="field" data-fid="in:${n.label}" data-in="${n.k2||'txt'}" placeholder="${n.label}" aria-label="${n.label}" value="${esc(n.val)}">`;return `<button data-ui="control" data-v="${n.v}" data-fid="${n.act||'c'}:${n.key||n.label||n.aria}" ${n.act?`data-act="${n.act}"`:''} ${n.key?`data-key="${n.key}"`:''} ${n.pressed?'aria-pressed="true"':''} ${n.block?'data-block':''} ${n.hide?'data-hide-'+n.hide:''} ${n.open?'data-open':''} aria-label="${n.aria||n.label}">${n.v!=='head'&&n.icon?ic(n.icon):''}${n.label}${n.v==='head'?ic(n.icon):''}</button>`;
+  case'group':{const ch=n.c[0],pr=!ch.slots.includes('p')&&ch.items.every(i=>i.price!=null&&i.price===ch.items[0].price)&&ch.items[0],sel=ch.items.find(i=>i.id===sv(ch.key));
+    return `<div data-ui="flow" style="gap:var(--s3)"><div data-ui="head">${n.title}${pr?`<span data-mut style="font-weight:400">${price(pr.price)}</span>`:''}${n.info?ic('info'):''}</div>${sel&&!ch.slots.includes('l')&&pr?`<div data-ui="head" data-mut>${sel.label}${ic('info')}</div>`:''}${n.c.map(R).join('')}</div>`}
+  case'choices':return R(F(Array.isArray(n.cols)&&n.cols.every(x=>x==='h')?{dir:'row',wrap:1,g:'in',scroll:n.scroll,grow:n.grow}:{cols:n.cols,g:'in',scroll:n.scroll,grow:n.grow},n.items.map(i=>({t:'choice',set:n,i}))));   /* a row of text options wraps instead of being cut off */
+  case'choice':{const s=n.set,i=n.i,L=s.slots.includes('l'),P=s.slots.includes('p');
+    return `<button data-ui="choice" data-key="${s.key}" data-id="${i.id}" data-fid="${s.key}:${i.id}" aria-pressed="${sv(s.key)===i.id}" ${i.m?'data-media':''} ${L?'data-text':''} ${s.ind?'data-ind':''} aria-label="${i.label}">${s.slots.includes('i')?ic('info'):''}${i.m?R({t:'media',...i.m,ratio:s.ratio}):''}${L?`<b>${i.label}</b>`:''}${P?`<span data-mut>${price(i.price)}</span>`:''}${s.ind?'<span data-ui="radio"></span>':''}</button>`}
+  case'media':return n.c?`<div data-ui="media" style="--c:${n.c};${RT(n.ratio)}"></div>`
+    :`<div data-ui="media" ${n.size?`data-size="${n.size}"`:''} style="${RT(n.ratio)}"><svg viewBox="0 0 ${n.b[0]} ${n.b[1]}" preserveAspectRatio="xMidYMid meet">${Array.from({length:n.b[0]*n.b[1]},(_,k)=>`<circle cx="${k%n.b[0]+.5}" cy="${(k/n.b[0]|0)+.5}" r=".46" fill="${PAL[(k*5+(k>>2)*3)%PAL.length]}"/>`).join('')}</svg></div>`;
+  case'v3d':return '<div data-ui="media" data-size="fill" id="v3dslot" style="--rw:1;--rh:1"></div>';
+  case'beadsvg':return `<div data-ui="media" data-size="fill" style="--rw:1;--rh:1"><svg viewBox="${n.svg.vb}" preserveAspectRatio="xMidYMid meet">${n.svg.s}</svg></div>`;
+  case'bar':return `<div data-ui="flow" data-bar>${n.seg.map(([w,c])=>`<i style="flex:${w} 1 0;background:${c}"></i>`).join('')}</div>`;
+  case'h':return `<div data-ui="head">${n.s}</div>`;
+  case'readout':return `<div data-ui="readout" ${n.size?`data-size="${n.size}"`:''} ${n.flip?'data-flip':''}><span class="k">${V(n.k)}</span><span class="v">${V(n.v)}</span></div>`;
+  case'text':return n.v==='link'?`<a href="#" onclick="return false" data-ui="text" data-v="link">${V(n.s)}</a>`:`<div data-ui="text" data-v="${n.v}">${V(n.s)}</div>`;
+  }
+}
+
+/* behavior: every interaction changes state, then redraws. No other logic. */
+const app=document.getElementById('app');
+let PREV=null;
+function paint(tree){   /* the page has three regions (header, stage, rail). Each is re-parsed only if its HTML changed, so a rail-only click no longer rebuilds the thousands of bead rects in the stage */
+  const parts=tree.c.map(R),root=app.firstElementChild;
+  if(!root||!PREV||PREV.length!==parts.length||root.children.length!==parts.length){app.innerHTML=R(tree);PREV=parts;return}
+  const t=document.createElement('template');
+  parts.forEach((h,i)=>{if(h===PREV[i])return;t.innerHTML=h;root.children[i].replaceWith(t.content.firstElementChild)});
+  PREV=parts}
+function draw(){
+  const sc=[...app.querySelectorAll('[data-scroll]')].map(e=>[e.scrollTop,e.scrollLeft]);
+  const f=document.activeElement&&document.activeElement.dataset&&document.activeElement.dataset.fid;const ss=document.activeElement&&document.activeElement.selectionStart;
+  clampAll();const tree=build();sets=[];walk(tree);paint(tree);attach3();
+  app.querySelectorAll('[data-scroll]').forEach((e,i)=>{if(sc[i]){e.scrollTop=sc[i][0];e.scrollLeft=sc[i][1]}});
+  if(f){const e=app.querySelector(`[data-fid="${f}"]`);if(e){e.focus();if(ss!=null&&e.setSelectionRange)e.setSelectionRange(ss,ss)}}
+  fade();
+  if(location.hash==='#audit')audit()
+}
+function fade(){app.querySelectorAll('[data-tone=media] [data-scroll=y]').forEach(e=>e.toggleAttribute('data-more',e.scrollHeight>e.clientHeight+1&&e.scrollTop+e.clientHeight<e.scrollHeight-1))}   /* mark a scrolling panel that has more below */
+app.addEventListener('scroll',e=>{if(e.target.matches&&e.target.matches('[data-tone=media] [data-scroll=y]'))fade()},true);window.addEventListener('resize',fade);
+app.addEventListener('input',e=>{const t=e.target;if(t.dataset&&t.dataset.in){const q=t.dataset.in;S[q]=Array.from(t.value).slice(0,q==='dtxt'?S.dn:24).join('');draw()}});
+app.addEventListener('click',e=>{
+  const eg=e.target.closest&&e.target.closest('[data-ear]');if(eg&&S.pm==='sep'){put('ear',eg.dataset.ear);return draw()}   /* click an earring on the stage to work on it */
+  const c=e.target.closest('[data-ui=choice]');
+  if(c){put(c.dataset.key,c.dataset.id);if(S.form==='diamond'&&S.source==='image')S.source='text';return draw()}
+  const b=e.target.closest('[data-ui=control]');if(!b)return;
+  const a=b.dataset.act;
+  if(a==='open'){S.open[b.dataset.key]=!S.open[b.dataset.key];draw()}
+  else if(a==='scene'||a==='real'||a==='three'){S[a]=!S[a];draw()}
+  else if(ACT[a]){ACT[a]();draw()}
+  else if(a==='upload')fileIn.click();
+  else if(a==='next')app.querySelector('[data-scroll=x]').scrollBy({left:240,behavior:'smooth'});
+  else if(a==='fs'){const st=app.querySelector('[data-tone=stage]');if(st.requestFullscreen)st.requestFullscreen()}
+});
+draw();
+function audit(){
+  const bad=[],sc=e=>/auto|scroll/.test(getComputedStyle(e).overflowY+getComputedStyle(e).overflowX);
+  app.querySelectorAll('[data-ui]').forEach(e=>{e.style.outline='';
+    if(!sc(e)&&(e.scrollWidth>e.clientWidth+1||e.scrollHeight>e.clientHeight+1))bad.push([e,'content is clipped']);
+    const p=e.parentElement&&e.parentElement.closest('[data-ui]');
+    if(p&&!sc(p)){const a=e.getBoundingClientRect(),b=p.getBoundingClientRect();
+      if(a.width&&(a.left<b.left-1||a.right>b.right+1||a.top<b.top-1||a.bottom>b.bottom+1))bad.push([e,'outside its parent'])}});
+  app.querySelectorAll('[data-ui=flow],[data-ui=surface]').forEach(p=>{const k=[...p.children].filter(c=>c.offsetWidth&&c.offsetHeight);
+    for(let i=0;i<k.length;i++)for(let j=i+1;j<k.length;j++){const a=k[i].getBoundingClientRect(),b=k[j].getBoundingClientRect();
+      if(a.left<b.right-1&&b.left<a.right-1&&a.top<b.bottom-1&&b.top<a.bottom-1)bad.push([k[j],'overlaps a sibling'])}});
+  bad.forEach(([e,m])=>{e.style.outline='2px solid red';console.warn(m,e)});
+  let t=document.getElementById('audit');if(!t){t=document.createElement('div');t.id='audit';t.style.cssText='position:fixed;left:8px;bottom:8px;z-index:9;padding:4px 10px;border-radius:99px;font:500 12px var(--font);color:#fff';document.body.appendChild(t)}
+  t.style.background=bad.length?'#c00':'#0a7';t.textContent='layout audit: '+(bad.length?bad.length+' issues':'clean');
+}
+/* ===== SELF-TEST: open the page with #selftest. Runs a matrix of states through the engines and the UI tree.
+   Three hashes: ENGINE (2D svg, 3D bead list and price of the older cases), UI (the rendered interface of the older cases) and CHECK (the checkerboard cases).
+   A refactor must keep ENGINE identical; UI changes only when the interface itself was changed on purpose ===== */
+const LEGACY_DF='source,stripes,sel,txt,font,textc,textbg,sat,scale,rot,fh,fv,tx,ty,imgName,imgErr,imgId,dn,dsel,dcol,dtxt,ground,outline,outlinec,finish,procBy'.split(',');
+async function selftest(){
+  const keep=JSON.parse(JSON.stringify(S)),kD=[D[0],D[1]],kI=IMG,res=[];
+  const reset=()=>{Object.keys(S).forEach(k=>delete S[k]);Object.assign(S,JSON.parse(JSON.stringify(keep)));D[0]=D[1]=null;IMG=null};
+  const fnv=s=>{let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}return (h>>>0).toString(16)};
+  const snapshot=()=>{clampAll();const sc=scene2d(),q=quote(),tree=build();sets=[];walk(tree);const ui=R(tree);
+    return[fnv((sc?sc.vb+sc.s+JSON.stringify(sc.parts)+JSON.stringify(sc.bl):'')+JSON.stringify(q)),fnv(ui)]};
+  const add=(name,fn)=>{reset();try{fn();res.push([name,...snapshot()])}catch(e){res.push([name,'ERR '+e.message,'ERR'])}};
+  const L3=['S','M','L'];let i=0;
+  for(const form of['rect','diamond'])for(const item of['earring','keychain','bracelet'])for(const source of['solid','text'])for(const bead of['5','10','15'])for(const outline of['none','on']){
+    const n=i++;
+    add([form,item,source,bead,outline].join('/'),()=>{
+      put('form',form);put('item',item);put('source',source);put('bead',bead);put('outline',outline);
+      put('len',L3[n%3]);put('wid',L3[(n>>1)%3]);put('finish',['matte','glossy','glass','metal'][n%4]);put('proc',['dominant','blended'][n%2]);
+      if(source==='solid')S.stripes=[{c:'pink',w:2},{c:'blue',w:1},{c:'amber',w:3}];
+      put('font',['sans','serif','mono','display','script','round'][n%6]);put('textc',['bone','pink','amber'][n%3]);
+      S.dn=2+n%4;S.dcol=['pink','bone','red','green']})}
+  add('pair/identical',()=>{put('item','earring');put('pm','same')});
+  add('pair/separate',()=>{put('item','earring');put('pm','sep');put('ear','1');S.txt='AB';S.finish='metal';S.ground='navy';put('ear','0')});
+  add('pair/separate-diamond',()=>{put('form','diamond');put('item','earring');put('pm','sep');put('ear','1');S.dn=2;S.dtxt='XY';put('ear','0')});
+  const cv=document.createElement('canvas');cv.width=120;cv.height=80;const g=cv.getContext('2d'),gr=g.createLinearGradient(0,0,120,80);
+  gr.addColorStop(0,'#e9462e');gr.addColorStop(.5,'#f2b33d');gr.addColorStop(1,'#5b7cfa');g.fillStyle=gr;g.fillRect(0,0,120,80);g.fillStyle='#fff';g.fillRect(30,20,30,30);
+  const im=await new Promise(r=>{const x=new Image();x.onload=()=>r(x);x.src=cv.toDataURL()});
+  add('image/a',()=>{IMG=im;put('item','bracelet');put('source','image');S.imgId=101;S.scale=1.5;S.rot=30;S.fh=true;S.sat='2';S.tx=3;S.ty=-2;put('proc','blended')});
+  add('image/b',()=>{IMG=im;put('item','keychain');put('source','image');S.imgId=102;S.scale=.5;S.rot=-45;S.fv=true;S.sat='0';put('proc','dominant');put('outline','on')});
+  /* checkerboard cases (only meaningful in a build that has the source) */
+  const CK=['pink','bone','ink','blue','amber','green'];i=0;
+  for(const form of['rect','diamond'])for(const item of['earring','keychain','bracelet'])for(const k of[2,3,4,5,6]){const n=i++;
+    add('check/'+[form,item,k].join('/'),()=>{put('form',form);put('item',item);put('source','check');put('bead',['5','10','15'][n%3]);put('outline',['none','on'][n%2]);
+      put('len',L3[n%3]);put('wid',L3[(n>>1)%3]);put('finish',['matte','glossy','glass','metal'][n%4]);S.chk=CK.slice(0,k);S.csel='0';S.dn=2+n%4})}
+  add('check/pair-sep',()=>{put('item','earring');put('source','check');S.chk=CK.slice(0,3);put('pm','sep');put('ear','1');S.chk=CK.slice(0,5);put('ear','0')});
+  add('check/pair-sep-diamond',()=>{put('form','diamond');put('item','earring');put('source','check');S.chk=CK.slice(0,4);put('pm','sep');put('ear','1');S.chk=CK.slice(0,2);S.dn=3;put('ear','0')});
+  reset();Object.assign(S,JSON.parse(JSON.stringify(keep)));D[0]=kD[0];D[1]=kD[1];IMG=kI;
+  const dfOk=LEGACY_DF.every(k=>DF.includes(k)),extra=DF.filter(k=>!LEGACY_DF.includes(k)),bad=res.filter(r=>/^ERR/.test(r[1])).length;
+  const old=res.filter(r=>!/^check\//.test(r[0])),chk=res.filter(r=>/^check\//.test(r[0]));
+  const H={engine:fnv(old.map(r=>r[0]+':'+r[1]).join('|')),ui:fnv(old.map(r=>r[0]+':'+r[2]).join('|')),check:fnv(chk.map(r=>r.join(':')).join('|'))};
+  window.__selftest={...H,res,dfOk,extra};console.table(res);draw();
+  const t=document.createElement('div');t.style.cssText='position:fixed;left:8px;bottom:8px;z-index:9;padding:4px 10px;border-radius:99px;font:500 12px var(--font);color:#fff;background:'+(bad||!dfOk?'#c00':'#0a7');
+  t.textContent='engine '+H.engine+' · ui '+H.ui+' · check '+H.check+' · '+old.length+'+'+chk.length+' cases · '+bad+' errors · DF '+(dfOk?'ok':'MISSING')+(extra.length?' +'+extra.join(','):'');document.body.appendChild(t);
+}
+if(location.hash==='#selftest')selftest();
+</script>
+<style>@media (max-width:900px){[data-hide-sm],[data-hide=sm]{display:none}}</style>
+</body>
+</html>
